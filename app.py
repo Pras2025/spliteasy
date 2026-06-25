@@ -37,7 +37,14 @@ app.config.update(
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH  = os.path.join(BASE_DIR, "expense.db")
+
+# On Render, use /var/data (persistent disk mount point).
+# Locally, use the project folder.
+_RENDER_DISK = "/var/data"
+if os.path.isdir(_RENDER_DISK):
+    DB_PATH = os.path.join(_RENDER_DISK, "expense.db")
+else:
+    DB_PATH = os.path.join(BASE_DIR, "expense.db")
 
 GOOGLE_CLIENT_ID     = os.environ.get("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
