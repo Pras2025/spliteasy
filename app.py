@@ -20,7 +20,11 @@ from reportlab.lib.enums import TA_RIGHT, TA_CENTER
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "spliteasy-dev-secret-change-in-prod")
 
-# Allow OAuth over HTTP on localhost (dev only — Render uses HTTPS automatically)
+# Trust Render's reverse proxy so OAuth redirect URIs use https://
+from werkzeug.middleware.proxy_fix import ProxyFix
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+
+# Allow OAuth over plain HTTP on localhost only
 os.environ.setdefault("OAUTHLIB_INSECURE_TRANSPORT", "1")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -53,9 +57,10 @@ google_bp = make_google_blueprint(
     client_secret = os.environ.get("GOOGLE_CLIENT_SECRET", ""),
     scope         = ["openid", "https://www.googleapis.com/auth/userinfo.email",
                      "https://www.googleapis.com/auth/userinfo.profile"],
-    redirect_url  = "/google/authorized",
 )
 app.register_blueprint(google_bp, url_prefix="/google_login")
+
+
 
 # ── DB ────────────────────────────────────────────────────────────────────────
 def get_connection():
@@ -129,16 +134,20 @@ def login_page():
         return redirect(url_for("home"))
     return render_template("login.html")
 
-@app.route("/google/authorized")
-def google_authorized():
-    if not google.authorized:
+# Flask-Dance calls this after Google redirects back
+from flask_dance.consumer import oauth_authorized
+from flask_dance.consumer.storage import MemoryStorage
+
+@oauth_authorized.connect_via(google_bp)
+def google_logged_in(blueprint, token):
+    if not token:
         flash("Google sign-in was cancelled.", "error")
         return redirect(url_for("login_page"))
     try:
-        resp = google.get("/oauth2/v2/userinfo")
+        resp = blueprint.session.get("/oauth2/v2/userinfo")
         if not resp.ok:
             flash("Could not fetch your Google profile.", "error")
-            return redirect(url_for("login_page"))
+            return False
         info      = resp.json()
         google_id = info["id"]
         name      = info.get("name", "User")
@@ -150,7 +159,7 @@ def google_authorized():
         return redirect(url_for("home"))
     except Exception as e:
         flash("Sign-in failed. Please try again.", "error")
-        return redirect(url_for("login_page"))
+        return False
 
 @app.route("/logout")
 @login_required
