@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Admin Panel{% endblock %}
+{% block content %}
+
+<div class="page-header-row">
+  <div class="page-header" style="margin-bottom:0">
+    <h1>Admin Panel</h1>
+    <p>SplitEasy — site overview</p>
+  </div>
+</div>
+
+<!-- Totals -->
+<div class="stat-grid" style="margin-bottom:1.5rem;grid-template-columns:repeat(4,1fr)">
+  <div class="stat-card">
+    <div class="stat-label">Total Users</div>
+    <div class="stat-value accent">{{ total_users }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Total Events</div>
+    <div class="stat-value white">{{ total_events }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Total Expenses</div>
+    <div class="stat-value white">{{ total_expenses }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Total Amount</div>
+    <div class="stat-value green">₹{{ total_amount }}</div>
+  </div>
+</div>
+
+<!-- Users table -->
+<div class="card">
+  <div class="card-header">
+    <h3>Registered Users</h3>
+    <span class="badge badge-accent">{{ total_users }} total</span>
+  </div>
+  {% if stats|length == 0 %}
+  <div class="empty-state"><p>No users yet.</p></div>
+  {% else %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>User</th>
+          <th>Email</th>
+          <th>Events</th>
+          <th>Expenses</th>
+          <th>Total Spent</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in stats %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td>
+            <span style="display:inline-flex;align-items:center;gap:9px">
+              {% if u.avatar %}
+              <img src="{{ u.avatar }}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;border:1px solid var(--border)" referrerpolicy="no-referrer">
+              {% else %}
+              <span class="avatar" style="width:28px;height:28px;font-size:.65rem">{{ u.name[:1]|upper }}</span>
+              {% endif %}
+              <span style="font-weight:500;color:var(--ink)">{{ u.name }}</span>
+            </span>
+          </td>
+          <td style="color:var(--ink-2)">{{ u.email }}</td>
+          <td><span class="badge badge-accent">{{ u.event_count }}</span></td>
+          <td><span class="badge badge-gray">{{ u.expense_count }}</span></td>
+          <td><span class="badge badge-green">₹{{ u.total_spent }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}

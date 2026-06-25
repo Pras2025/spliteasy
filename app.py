@@ -573,6 +573,72 @@ def download_pdf():
         download_name=f"{safe}_settlement.pdf",
         mimetype="application/pdf")
 
+# ── Admin Panel ──────────────────────────────────────────────────────────────
+ADMIN_EMAIL = "prashant.umrao@pilani.bits-pilani.ac.in"
+
+def admin_required(f):
+    from functools import wraps
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not current_user.is_authenticated:
+            return redirect(url_for("login_page"))
+        if current_user.email != ADMIN_EMAIL:
+            return render_template("admin_denied.html"), 403
+        return f(*args, **kwargs)
+    return decorated
+
+@app.route("/admin")
+@admin_required
+def admin_panel():
+    conn = get_connection(); c = conn.cursor()
+
+    # All users
+    c.execute("SELECT * FROM users ORDER BY id DESC")
+    users = c.fetchall()
+
+    # Per-user event + expense counts
+    stats = []
+    for u in users:
+        c.execute("SELECT COUNT(*) FROM events WHERE user_id=?", (u["id"],))
+        event_count = c.fetchone()[0]
+        c.execute("""SELECT COUNT(*) FROM expenses e
+                     JOIN events ev ON e.event_id = ev.id
+                     WHERE ev.user_id=?""", (u["id"],))
+        expense_count = c.fetchone()[0]
+        c.execute("""SELECT COALESCE(SUM(e.amount),0) FROM expenses e
+                     JOIN events ev ON e.event_id = ev.id
+                     WHERE ev.user_id=?""", (u["id"],))
+        total_spent = c.fetchone()[0]
+        stats.append({
+            "id":            u["id"],
+            "name":          u["name"],
+            "email":         u["email"],
+            "avatar":        u["avatar"] or "",
+            "google_id":     u["google_id"],
+            "event_count":   event_count,
+            "expense_count": expense_count,
+            "total_spent":   round(total_spent, 2),
+        })
+
+    # Overall totals
+    c.execute("SELECT COUNT(*) FROM users")
+    total_users = c.fetchone()[0]
+    c.execute("SELECT COUNT(*) FROM events")
+    total_events = c.fetchone()[0]
+    c.execute("SELECT COUNT(*) FROM expenses")
+    total_expenses = c.fetchone()[0]
+    c.execute("SELECT COALESCE(SUM(amount),0) FROM expenses")
+    total_amount = round(c.fetchone()[0], 2)
+
+    conn.close()
+    return render_template("admin.html",
+        stats=stats,
+        total_users=total_users,
+        total_events=total_events,
+        total_expenses=total_expenses,
+        total_amount=total_amount,
+    )
+
 # ── Debug error handler (shows real error in response) ───────────────────────
 @app.errorhandler(500)
 def internal_error(e):
