@@ -240,11 +240,14 @@ def google_callback():
     return redirect(url_for("home"))
 
 @app.route("/logout")
-@login_required
 def logout():
     logout_user()
     session.clear()
-    return redirect(url_for("login_page"))
+    # Expire the session cookie immediately
+    response = redirect(url_for("login_page"))
+    response.delete_cookie("spliteasy_session")
+    response.delete_cookie("session")
+    return response
 
 # ── Home ──────────────────────────────────────────────────────────────────────
 @app.route("/", methods=["GET", "POST"])
@@ -257,7 +260,7 @@ def home():
                    request.form["event_name"].strip(),
                    request.form["participants"].strip()))
         conn.commit()
-    c.execute("SELECT id,name FROM events WHERE user_id=? OR user_id IS NULL ORDER BY id DESC",
+    c.execute("SELECT id,name FROM events WHERE user_id=? ORDER BY id DESC",
               (current_user.id,))
     events = c.fetchall(); conn.close()
     return render_template("index.html", events=events)
