@@ -21,6 +21,14 @@ import requests as http_requests  # plain requests lib — no flask-dance
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "spliteasy-dev-secret-change-in-prod")
 
+# Session cookie must work over HTTPS on Render
+app.config.update(
+    SESSION_COOKIE_SECURE   = os.environ.get("RENDER", False),
+    SESSION_COOKIE_HTTPONLY = True,
+    SESSION_COOKIE_SAMESITE = "Lax",
+    SESSION_COOKIE_NAME     = "spliteasy_session",
+)
+
 # Trust Render's HTTPS proxy
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
@@ -159,10 +167,12 @@ def google_callback():
         flash(f"Google sign-in was cancelled: {error}", "error")
         return redirect(url_for("login_page"))
 
-    # Validate state
-    state = request.args.get("state", "")
-    if state != session.pop("oauth_state", None):
-        flash("Invalid sign-in state. Please try again.", "error")
+    # Validate state (skip strict check if session was lost across request)
+    received_state = request.args.get("state", "")
+    expected_state = session.pop("oauth_state", None)
+    if expected_state and received_state != expected_state:
+        app.logger.warning(f"State mismatch: expected={expected_state} got={received_state}")
+        flash("Session mismatch. Please try signing in again.", "error")
         return redirect(url_for("login_page"))
 
     code = request.args.get("code")
@@ -544,6 +554,15 @@ def download_pdf():
     return send_file(buf, as_attachment=True,
         download_name=f"{safe}_settlement.pdf",
         mimetype="application/pdf")
+
+# ── Debug error handler (shows real error in response) ───────────────────────
+@app.errorhandler(500)
+def internal_error(e):
+    import traceback
+    tb = traceback.format_exc()
+    app.logger.error(f"500 error: {tb}")
+    # Show readable error page with traceback
+    return render_template("error.html", error=str(e), traceback=tb), 500
 
 init_db()
 if __name__ == "__main__":
