@@ -55,8 +55,10 @@ def load_user(user_id):
 google_bp = make_google_blueprint(
     client_id     = os.environ.get("GOOGLE_CLIENT_ID", ""),
     client_secret = os.environ.get("GOOGLE_CLIENT_SECRET", ""),
-    scope         = ["openid", "https://www.googleapis.com/auth/userinfo.email",
+    scope         = ["openid",
+                     "https://www.googleapis.com/auth/userinfo.email",
                      "https://www.googleapis.com/auth/userinfo.profile"],
+    redirect_to   = "home",   # after OAuth, go to home route
 )
 app.register_blueprint(google_bp, url_prefix="/google_login")
 
@@ -134,15 +136,19 @@ def login_page():
         return redirect(url_for("home"))
     return render_template("login.html")
 
-# Flask-Dance calls this after Google redirects back
+# Flask-Dance signal: fires after Google redirects back with token
 from flask_dance.consumer import oauth_authorized
-from flask_dance.consumer.storage import MemoryStorage
 
 @oauth_authorized.connect_via(google_bp)
 def google_logged_in(blueprint, token):
+    """
+    Signal handler — must NOT return a redirect.
+    Return False to skip saving token to storage (we use DB).
+    Flask-Dance will then redirect to the next_url or /.
+    """
     if not token:
         flash("Google sign-in was cancelled.", "error")
-        return redirect(url_for("login_page"))
+        return False
     try:
         resp = blueprint.session.get("/oauth2/v2/userinfo")
         if not resp.ok:
@@ -156,10 +162,17 @@ def google_logged_in(blueprint, token):
         uid = get_or_create_user(google_id, name, email, avatar)
         user = User(uid, name, email, avatar)
         login_user(user, remember=True)
-        return redirect(url_for("home"))
+        # Return False = don't store token in Flask-Dance's default storage
+        return False
     except Exception as e:
+        app.logger.error(f"Google login error: {e}")
         flash("Sign-in failed. Please try again.", "error")
         return False
+
+# After Google OAuth completes, Flask-Dance redirects here
+@app.route("/google/callback")
+def google_callback():
+    return redirect(url_for("home"))
 
 @app.route("/logout")
 @login_required
