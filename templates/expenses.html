@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page-header-row">
+  <div class="page-header" style="margin-bottom:0">
+    <h1>{{ event_name }}</h1>
+    <p>Expense History</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="/dashboard" class="btn btn-ghost btn-sm">Dashboard</a>
+    <a href="/add_expense" class="btn btn-primary btn-sm">+ Add Expense</a>
+  </div>
+</div>
+
+<div class="card">
+  {% if expenses|length == 0 %}
+  <div class="empty-state">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 14l2 2 4-4M3 10h18M3 6h18M3 14h4M3 18h4"/></svg>
+    <p>No expenses added yet.</p>
+    <a href="/add_expense" class="btn btn-primary">Add First Expense</a>
+  </div>
+  {% else %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Description</th>
+          <th>Amount</th>
+          <th>Paid By</th>
+          <th>Participants</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for expense in expenses %}
+        <tr>
+          <td style="color:var(--ink-3);width:40px">{{ loop.index }}</td>
+          <td style="font-weight:500">{{ expense.name }}</td>
+          <td>
+            <span class="badge badge-green">₹{{ expense.amount }}</span>
+          </td>
+          <td>
+            <span style="display:inline-flex;align-items:center;gap:6px">
+              <span style="width:24px;height:24px;border-radius:50%;background:var(--accent-light);color:var(--accent);display:inline-flex;align-items:center;justify-content:center;font-size:.6875rem;font-weight:600">{{ expense.payer[:1]|upper }}</span>
+              {{ expense.payer }}
+            </span>
+          </td>
+          <td>
+            <div style="display:flex;flex-wrap:wrap;gap:4px">
+              {% for p in expense.participants %}
+              <span class="badge badge-gray">{{ p }}</span>
+              {% endfor %}
+            </div>
+          </td>
+          <td style="width:80px">
+            <a href="/delete/{{ expense.id }}"
+               onclick="return confirm('Delete this expense?')"
+               class="btn btn-danger btn-sm">Delete</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}

@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page-header-row">
+  <div class="page-header" style="margin-bottom:0">
+    <h1>Settlement</h1>
+    <p>{{ event_name }}</p>
+  </div>
+  <div class="page-header-actions">
+    <a href="/dashboard" class="btn btn-ghost btn-sm">Dashboard</a>
+    <a href="/download_pdf" class="btn btn-primary btn-sm">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3M12 15l-4-4M12 15l4-4M3 18h18v3H3z"/></svg>
+      Download PDF
+    </a>
+  </div>
+</div>
+
+<!-- Final Transfers -->
+<div style="margin-bottom:1.5rem">
+  <p style="font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);margin-bottom:.75rem">Who Pays Whom</p>
+  <div class="card">
+    {% if transactions|length == 0 %}
+    <div style="padding:1.5rem;display:flex;align-items:center;gap:10px;color:var(--green)">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg>
+      <span style="font-weight:500">Everyone is fully settled!</span>
+    </div>
+    {% else %}
+    {% for t in transactions %}
+    <div class="transfer-item">
+      <div class="transfer-names">
+        <span style="display:inline-flex;align-items:center;gap:6px;font-weight:500">
+          <span style="width:28px;height:28px;border-radius:50%;background:var(--red-bg);color:var(--red);display:inline-flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:600">{{ t.from[:1]|upper }}</span>
+          {{ t.from }}
+        </span>
+        <span class="transfer-arrow">→</span>
+        <span style="display:inline-flex;align-items:center;gap:6px;font-weight:500">
+          <span style="width:28px;height:28px;border-radius:50%;background:var(--green-bg);color:var(--green);display:inline-flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:600">{{ t.to[:1]|upper }}</span>
+          {{ t.to }}
+        </span>
+      </div>
+      <span class="transfer-amount">₹{{ t.amount }}</span>
+    </div>
+    {% endfor %}
+    {% endif %}
+  </div>
+</div>
+
+<!-- Per-person breakdown -->
+<p style="font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);margin-bottom:.75rem">Participant Breakdown</p>
+<div class="card">
+  {% for person in results %}
+  <div class="person-result">
+    <div class="person-header">
+      <div class="person-meta">
+        <div class="person-avatar">{{ person.person[:2]|upper }}</div>
+        <span class="person-name">{{ person.person }}</span>
+      </div>
+      {% if person.balance > 0 %}
+        <span class="badge badge-green">receives ₹{{ person.balance }}</span>
+      {% elif person.balance < 0 %}
+        <span class="badge badge-red">pays ₹{{ person.balance | abs }}</span>
+      {% else %}
+        <span class="badge badge-gray">settled</span>
+      {% endif %}
+    </div>
+
+    <div class="person-stats" style="margin-bottom:.75rem">
+      <div>Paid <span>₹{{ person.paid }}</span></div>
+      <div>Consumed <span>₹{{ person.consumed }}</span></div>
+    </div>
+
+    {% if person.details %}
+    <table class="breakdown-table">
+      {% for item in person.details %}
+      <tr>
+        <td style="padding-right:1rem">{{ item.expense }}</td>
+        <td>₹{{ item.share }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+
+{% endblock %}

@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page-header-row" style="margin-bottom:2rem">
+  <div class="page-header" style="margin-bottom:0">
+    <h1>Your Events</h1>
+    <p>Track shared expenses for trips, dinners, and more</p>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;align-items:start">
+
+  <!-- Create Event -->
+  <div class="card" style="box-shadow:var(--shadow)">
+    <div class="card-header">
+      <h3>Create New Event</h3>
+    </div>
+    <div class="card-body">
+      <form method="POST">
+        <div class="form-group">
+          <label class="form-label">Event Name</label>
+          <input type="text" name="event_name" class="form-control" placeholder="Kedarnath Trek, Goa Trip…" required>
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label">Participants</label>
+          <input type="text" name="participants" class="form-control" placeholder="Aman, Rahul, Priya, Rohit" required>
+          <p class="form-hint">Separate names with commas</p>
+        </div>
+        <hr class="divider">
+        <button class="btn btn-primary btn-lg" style="width:100%">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          Create Event
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Events List -->
+  <div>
+    {% if events|length == 0 %}
+    <div class="card">
+      <div class="empty-state">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 0 2-2h2a2 2 0 0 0 2 2"/></svg>
+        <p>No events yet. Create one to get started.</p>
+      </div>
+    </div>
+    {% else %}
+    <div style="display:flex;flex-direction:column;gap:10px">
+      {% for event in events %}
+      <div class="card" style="padding:1rem 1.25rem;display:flex;align-items:center;justify-content:space-between;gap:1rem">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:36px;height:36px;border-radius:50%;background:var(--accent-light);color:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:.8125rem;flex-shrink:0">
+            {{ event["name"][:2]|upper }}
+          </div>
+          <span style="font-weight:500">{{ event["name"] }}</span>
+        </div>
+        <a href="/event/{{ event['id'] }}" class="btn btn-primary btn-sm">Open →</a>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+
+<style>
+@media(max-width:640px){
+  div[style*="grid-template-columns:1fr 1fr"]{grid-template-columns:1fr!important}
+}
+</style>
+
+{% endblock %}
