@@ -70,6 +70,8 @@ def get_connection():
 
 def init_db():
     conn = get_connection(); c = conn.cursor()
+
+    # Create users table
     c.execute("""CREATE TABLE IF NOT EXISTS users (
         id        INTEGER PRIMARY KEY AUTOINCREMENT,
         google_id TEXT UNIQUE NOT NULL,
@@ -77,22 +79,31 @@ def init_db():
         email     TEXT NOT NULL,
         avatar    TEXT
     )""")
+
+    # Create events table
     c.execute("""CREATE TABLE IF NOT EXISTS events (
         id           INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id      INTEGER NOT NULL,
+        user_id      INTEGER,
         name         TEXT NOT NULL,
-        participants TEXT NOT NULL,
-        FOREIGN KEY(user_id) REFERENCES users(id)
+        participants TEXT NOT NULL
     )""")
+
+    # Create expenses table
     c.execute("""CREATE TABLE IF NOT EXISTS expenses (
         id           INTEGER PRIMARY KEY AUTOINCREMENT,
         event_id     INTEGER NOT NULL,
         name         TEXT NOT NULL,
         amount       REAL NOT NULL,
         payer        TEXT NOT NULL,
-        participants TEXT NOT NULL,
-        FOREIGN KEY(event_id) REFERENCES events(id)
+        participants TEXT NOT NULL
     )""")
+
+    # ── Migration: add user_id column if it does not exist yet ──
+    cols = [row[1] for row in c.execute("PRAGMA table_info(events)").fetchall()]
+    if "user_id" not in cols:
+        c.execute("ALTER TABLE events ADD COLUMN user_id INTEGER")
+        app.logger.info("Migration: added user_id column to events")
+
     conn.commit(); conn.close()
 
 def get_or_create_user(google_id, name, email, avatar):
@@ -246,7 +257,7 @@ def home():
                    request.form["event_name"].strip(),
                    request.form["participants"].strip()))
         conn.commit()
-    c.execute("SELECT id,name FROM events WHERE user_id=? ORDER BY id DESC",
+    c.execute("SELECT id,name FROM events WHERE user_id=? OR user_id IS NULL ORDER BY id DESC",
               (current_user.id,))
     events = c.fetchall(); conn.close()
     return render_template("index.html", events=events)
