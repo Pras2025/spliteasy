@@ -1,35 +1,61 @@
-from flask import Flask, render_template, request, redirect, url_for, session, send_file, send_from_directory
+import os, io, datetime, sqlite3
 from collections import defaultdict
-import sqlite3
-import io
-import datetime
-import os
+from functools import wraps
 
-# Absolute path so DB works on any host (Render, local, etc.)
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH  = os.path.join(BASE_DIR, "expense.db")
+from flask import (Flask, render_template, request, redirect,
+                   url_for, session, send_file, send_from_directory, flash)
+from flask_login import (LoginManager, UserMixin, login_user,
+                         logout_user, login_required, current_user)
+from flask_dance.contrib.google import make_google_blueprint, google
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer,
+                                 Table, TableStyle, HRFlowable)
 from reportlab.lib.styles import ParagraphStyle
-from reportlab.lib.enums import TA_LEFT, TA_RIGHT, TA_CENTER
+from reportlab.lib.enums import TA_RIGHT, TA_CENTER
 
+# ── App setup ─────────────────────────────────────────────────────────────────
 app = Flask(__name__)
-app.secret_key = "expense_manager_secret_key"
+app.secret_key = os.environ.get("SECRET_KEY", "spliteasy-dev-secret-change-in-prod")
 
-# ── Colors ────────────────────────────────────────────────────────────────────
-ACCENT   = colors.HexColor("#5b4cff")
-GREEN    = colors.HexColor("#17b26a")
-RED      = colors.HexColor("#e53e3e")
-AMBER    = colors.HexColor("#d97706")
-INK      = colors.HexColor("#0f0f10")
-INK2     = colors.HexColor("#44444a")
-INK3     = colors.HexColor("#8a8a94")
-SURFACE2 = colors.HexColor("#f7f7f8")
-BORDER   = colors.HexColor("#e4e4e8")
-WHITE    = colors.white
+# Allow OAuth over HTTP on localhost (dev only — Render uses HTTPS automatically)
+os.environ.setdefault("OAUTHLIB_INSECURE_TRANSPORT", "1")
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH  = os.path.join(BASE_DIR, "expense.db")
+
+# ── Flask-Login ───────────────────────────────────────────────────────────────
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = "login_page"
+
+class User(UserMixin):
+    def __init__(self, id, name, email, avatar):
+        self.id     = str(id)
+        self.name   = name
+        self.email  = email
+        self.avatar = avatar
+
+@login_manager.user_loader
+def load_user(user_id):
+    conn = get_connection(); c = conn.cursor()
+    c.execute("SELECT * FROM users WHERE id=?", (user_id,))
+    row = c.fetchone(); conn.close()
+    if row:
+        return User(row["id"], row["name"], row["email"], row["avatar"])
+    return None
+
+# ── Google OAuth blueprint ────────────────────────────────────────────────────
+google_bp = make_google_blueprint(
+    client_id     = os.environ.get("GOOGLE_CLIENT_ID", ""),
+    client_secret = os.environ.get("GOOGLE_CLIENT_SECRET", ""),
+    scope         = ["openid", "https://www.googleapis.com/auth/userinfo.email",
+                     "https://www.googleapis.com/auth/userinfo.profile"],
+    redirect_url  = "/google/authorized",
+)
+app.register_blueprint(google_bp, url_prefix="/google_login")
 
 # ── DB ────────────────────────────────────────────────────────────────────────
 def get_connection():
@@ -38,49 +64,142 @@ def get_connection():
     return conn
 
 def init_db():
-    conn = get_connection()
-    c = conn.cursor()
+    conn = get_connection(); c = conn.cursor()
+    c.execute("""CREATE TABLE IF NOT EXISTS users (
+        id     INTEGER PRIMARY KEY AUTOINCREMENT,
+        google_id TEXT UNIQUE NOT NULL,
+        name   TEXT NOT NULL,
+        email  TEXT NOT NULL,
+        avatar TEXT
+    )""")
     c.execute("""CREATE TABLE IF NOT EXISTS events (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL, participants TEXT NOT NULL)""")
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id      INTEGER NOT NULL,
+        name         TEXT NOT NULL,
+        participants TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id)
+    )""")
     c.execute("""CREATE TABLE IF NOT EXISTS expenses (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        event_id INTEGER NOT NULL, name TEXT NOT NULL,
-        amount REAL NOT NULL, payer TEXT NOT NULL, participants TEXT NOT NULL,
-        FOREIGN KEY(event_id) REFERENCES events(id))""")
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id     INTEGER NOT NULL,
+        name         TEXT NOT NULL,
+        amount       REAL NOT NULL,
+        payer        TEXT NOT NULL,
+        participants TEXT NOT NULL,
+        FOREIGN KEY(event_id) REFERENCES events(id)
+    )""")
     conn.commit(); conn.close()
+
+# ── Auth helpers ──────────────────────────────────────────────────────────────
+def get_or_create_user(google_id, name, email, avatar):
+    conn = get_connection(); c = conn.cursor()
+    c.execute("SELECT * FROM users WHERE google_id=?", (google_id,))
+    row = c.fetchone()
+    if row:
+        # Update name/avatar in case they changed
+        c.execute("UPDATE users SET name=?,email=?,avatar=? WHERE google_id=?",
+                  (name, email, avatar, google_id))
+        uid = row["id"]
+    else:
+        c.execute("INSERT INTO users (google_id,name,email,avatar) VALUES (?,?,?,?)",
+                  (google_id, name, email, avatar))
+        uid = c.lastrowid
+    conn.commit(); conn.close()
+    return uid
+
+# ── PWA routes ────────────────────────────────────────────────────────────────
+@app.route("/sw.js")
+def service_worker():
+    return send_from_directory(os.path.join(app.root_path,"static"),
+                               "sw.js", mimetype="application/javascript")
+
+@app.route("/manifest.json")
+def manifest():
+    return send_from_directory(os.path.join(app.root_path,"static"),
+                               "manifest.json", mimetype="application/manifest+json")
+
+@app.route("/offline")
+def offline():
+    return render_template("offline.html")
+
+# ── Login / Auth ──────────────────────────────────────────────────────────────
+@app.route("/login")
+def login_page():
+    if current_user.is_authenticated:
+        return redirect(url_for("home"))
+    return render_template("login.html")
+
+@app.route("/google/authorized")
+def google_authorized():
+    if not google.authorized:
+        flash("Google sign-in was cancelled.", "error")
+        return redirect(url_for("login_page"))
+    try:
+        resp = google.get("/oauth2/v2/userinfo")
+        if not resp.ok:
+            flash("Could not fetch your Google profile.", "error")
+            return redirect(url_for("login_page"))
+        info      = resp.json()
+        google_id = info["id"]
+        name      = info.get("name", "User")
+        email     = info.get("email", "")
+        avatar    = info.get("picture", "")
+        uid = get_or_create_user(google_id, name, email, avatar)
+        user = User(uid, name, email, avatar)
+        login_user(user, remember=True)
+        return redirect(url_for("home"))
+    except Exception as e:
+        flash("Sign-in failed. Please try again.", "error")
+        return redirect(url_for("login_page"))
+
+@app.route("/logout")
+@login_required
+def logout():
+    # Clear Google OAuth token from session
+    if "google_oauth_token" in session:
+        del session["google_oauth_token"]
+    logout_user()
+    return redirect(url_for("login_page"))
 
 # ── Home ──────────────────────────────────────────────────────────────────────
 @app.route("/", methods=["GET","POST"])
+@login_required
 def home():
-    conn = get_connection(); cursor = conn.cursor()
+    conn = get_connection(); c = conn.cursor()
     if request.method == "POST":
-        cursor.execute("INSERT INTO events (name,participants) VALUES (?,?)",
-            (request.form["event_name"].strip(), request.form["participants"].strip()))
+        c.execute("INSERT INTO events (user_id,name,participants) VALUES (?,?,?)",
+                  (current_user.id,
+                   request.form["event_name"].strip(),
+                   request.form["participants"].strip()))
         conn.commit()
-    cursor.execute("SELECT id,name FROM events ORDER BY id DESC")
-    events = cursor.fetchall(); conn.close()
+    c.execute("SELECT id,name FROM events WHERE user_id=? ORDER BY id DESC",
+              (current_user.id,))
+    events = c.fetchall(); conn.close()
     return render_template("index.html", events=events)
 
 # ── Open Event ────────────────────────────────────────────────────────────────
 @app.route("/event/<int:event_id>")
+@login_required
 def open_event(event_id):
-    conn = get_connection(); cursor = conn.cursor()
-    cursor.execute("SELECT * FROM events WHERE id=?", (event_id,))
-    event = cursor.fetchone(); conn.close()
-    if not event: return redirect(url_for("home"))
-    session["event_id"] = event["id"]
-    session["event_name"] = event["name"]
+    conn = get_connection(); c = conn.cursor()
+    c.execute("SELECT * FROM events WHERE id=? AND user_id=?",
+              (event_id, current_user.id))
+    event = c.fetchone(); conn.close()
+    if not event:
+        return redirect(url_for("home"))
+    session["event_id"]    = event["id"]
+    session["event_name"]  = event["name"]
     session["participants"] = [p.strip() for p in event["participants"].split(",") if p.strip()]
     return redirect(url_for("dashboard"))
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 @app.route("/dashboard")
+@login_required
 def dashboard():
     if "event_id" not in session: return redirect(url_for("home"))
-    conn = get_connection(); cursor = conn.cursor()
-    cursor.execute("SELECT amount FROM expenses WHERE event_id=?", (session["event_id"],))
-    rows = cursor.fetchall(); conn.close()
+    conn = get_connection(); c = conn.cursor()
+    c.execute("SELECT amount FROM expenses WHERE event_id=?", (session["event_id"],))
+    rows = c.fetchall(); conn.close()
     return render_template("dashboard.html",
         event_name=session["event_name"],
         total_amount=round(sum(r["amount"] for r in rows), 2),
@@ -89,51 +208,63 @@ def dashboard():
 
 # ── Add Expense ───────────────────────────────────────────────────────────────
 @app.route("/add_expense", methods=["GET","POST"])
+@login_required
 def add_expense():
     if "event_id" not in session: return redirect(url_for("home"))
     if request.method == "POST":
-        conn = get_connection(); cursor = conn.cursor()
-        cursor.execute("INSERT INTO expenses (event_id,name,amount,payer,participants) VALUES (?,?,?,?,?)",
-            (session["event_id"], request.form["expense_name"],
-             float(request.form["amount"]), request.form["payer"],
-             ",".join(request.form.getlist("participants"))))
+        conn = get_connection(); c = conn.cursor()
+        c.execute("INSERT INTO expenses (event_id,name,amount,payer,participants) VALUES (?,?,?,?,?)",
+                  (session["event_id"], request.form["expense_name"],
+                   float(request.form["amount"]), request.form["payer"],
+                   ",".join(request.form.getlist("participants"))))
         conn.commit(); conn.close()
         return redirect(url_for("show_expenses"))
     return render_template("add_expense.html",
-        event_name=session["event_name"], participants=session["participants"])
+        event_name=session["event_name"],
+        participants=session["participants"])
 
 # ── Show Expenses ─────────────────────────────────────────────────────────────
 @app.route("/expenses")
+@login_required
 def show_expenses():
     if "event_id" not in session: return redirect(url_for("home"))
-    conn = get_connection(); cursor = conn.cursor()
-    cursor.execute("SELECT * FROM expenses WHERE event_id=? ORDER BY id DESC", (session["event_id"],))
-    rows = cursor.fetchall(); conn.close()
+    conn = get_connection(); c = conn.cursor()
+    c.execute("SELECT * FROM expenses WHERE event_id=? ORDER BY id DESC", (session["event_id"],))
+    rows = c.fetchall(); conn.close()
     expenses = [{"id":r["id"],"name":r["name"],"amount":r["amount"],
                  "payer":r["payer"],"participants":r["participants"].split(",")} for r in rows]
-    return render_template("expenses.html", event_name=session["event_name"], expenses=expenses)
+    return render_template("expenses.html",
+        event_name=session["event_name"], expenses=expenses)
 
 # ── Delete Expense ────────────────────────────────────────────────────────────
 @app.route("/delete/<int:expense_id>")
+@login_required
 def delete_expense(expense_id):
     if "event_id" not in session: return redirect(url_for("home"))
-    conn = get_connection(); cursor = conn.cursor()
-    cursor.execute("DELETE FROM expenses WHERE id=? AND event_id=?", (expense_id, session["event_id"]))
+    conn = get_connection(); c = conn.cursor()
+    c.execute("DELETE FROM expenses WHERE id=? AND event_id=?",
+              (expense_id, session["event_id"]))
     conn.commit(); conn.close()
     return redirect(url_for("show_expenses"))
 
-# ── Delete Event ─────────────────────────────────────────────────────────────
+# ── Delete Event ──────────────────────────────────────────────────────────────
 @app.route("/delete_event/<int:event_id>")
+@login_required
 def delete_event(event_id):
-    conn = get_connection(); cursor = conn.cursor()
-    cursor.execute("DELETE FROM expenses WHERE event_id=?", (event_id,))
-    cursor.execute("DELETE FROM events WHERE id=?", (event_id,))
-    conn.commit(); conn.close()
+    conn = get_connection(); c = conn.cursor()
+    # Verify ownership before deleting
+    c.execute("SELECT id FROM events WHERE id=? AND user_id=?",
+              (event_id, current_user.id))
+    if c.fetchone():
+        c.execute("DELETE FROM expenses WHERE event_id=?", (event_id,))
+        c.execute("DELETE FROM events WHERE id=?", (event_id,))
+        conn.commit()
+    conn.close()
     if session.get("event_id") == event_id:
         session.clear()
     return redirect(url_for("home"))
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# ── Settlement helpers ────────────────────────────────────────────────────────
 def compute_settlement(expenses, participants):
     paid = defaultdict(float); consumed = defaultdict(float); breakdown = defaultdict(list)
     for exp in expenses:
@@ -141,270 +272,204 @@ def compute_settlement(expenses, participants):
         paid[exp["payer"]] += exp["amount"]
         for p in exp["participants"]:
             consumed[p] += share
-            breakdown[p].append({"expense": exp["name"], "share": round(share, 2)})
+            breakdown[p].append({"expense":exp["name"],"share":round(share,2)})
     results = []
     for person in participants:
         balance = paid[person] - consumed[person]
-        results.append({"person": person, "paid": round(paid[person],2),
-                        "consumed": round(consumed[person],2),
-                        "balance": round(balance,2), "details": breakdown[person]})
+        results.append({"person":person,"paid":round(paid[person],2),
+                        "consumed":round(consumed[person],2),
+                        "balance":round(balance,2),"details":breakdown[person]})
     creditors, debtors = [], []
     for r in results:
-        if r["balance"] > 0: creditors.append({"name":r["person"],"amount":r["balance"]})
-        elif r["balance"] < 0: debtors.append({"name":r["person"],"amount":abs(r["balance"])})
+        if   r["balance"] >  0.01: creditors.append({"name":r["person"],"amount":r["balance"]})
+        elif r["balance"] < -0.01: debtors.append({"name":r["person"],"amount":abs(r["balance"])})
     transactions = []; i = j = 0
     while i < len(debtors) and j < len(creditors):
         amt = min(debtors[i]["amount"], creditors[j]["amount"])
-        if amt > 0.01: transactions.append({"from":debtors[i]["name"],"to":creditors[j]["name"],"amount":round(amt,2)})
+        if amt > 0.01:
+            transactions.append({"from":debtors[i]["name"],"to":creditors[j]["name"],"amount":round(amt,2)})
         debtors[i]["amount"] -= amt; creditors[j]["amount"] -= amt
         if debtors[i]["amount"] < 0.01: i += 1
         if creditors[j]["amount"] < 0.01: j += 1
     return results, transactions
 
-# ── Settlement Page ───────────────────────────────────────────────────────────
+# ── Settlement page ───────────────────────────────────────────────────────────
 @app.route("/settlement")
+@login_required
 def settlement():
     if "event_id" not in session: return redirect(url_for("home"))
-    conn = get_connection(); cursor = conn.cursor()
-    cursor.execute("SELECT * FROM expenses WHERE event_id=?", (session["event_id"],))
-    rows = cursor.fetchall(); conn.close()
+    conn = get_connection(); c = conn.cursor()
+    c.execute("SELECT * FROM expenses WHERE event_id=?", (session["event_id"],))
+    rows = c.fetchall(); conn.close()
     expenses = [{"name":r["name"],"amount":r["amount"],"payer":r["payer"],
                  "participants":r["participants"].split(",")} for r in rows]
     results, transactions = compute_settlement(expenses, session["participants"])
     return render_template("settlement.html", event_name=session["event_name"],
         results=results, transactions=transactions)
 
-# ── PDF Generator ─────────────────────────────────────────────────────────────
+# ── PDF ───────────────────────────────────────────────────────────────────────
 def build_pdf(event_name, participants, expenses, results, transactions):
     buf = io.BytesIO()
     PAGE_W, PAGE_H = A4
     MARGIN = 18*mm
-
     doc = SimpleDocTemplate(buf, pagesize=A4,
         leftMargin=MARGIN, rightMargin=MARGIN,
         topMargin=MARGIN, bottomMargin=MARGIN)
-
-    # ── Styles ─────────────────────────────────────────────────────────────────
-    def sty(name, **kw):
-        defaults = dict(fontName="Helvetica", fontSize=9, textColor=INK, leading=14)
-        defaults.update(kw)
-        return ParagraphStyle(name, **defaults)
-
-    S_TITLE   = sty("title", fontName="Helvetica-Bold", fontSize=20, textColor=INK, leading=24, spaceAfter=2)
-    S_SUB     = sty("sub", fontSize=10, textColor=INK3, spaceAfter=16)
-    S_H2      = sty("h2", fontName="Helvetica-Bold", fontSize=11, textColor=INK, spaceBefore=16, spaceAfter=8)
-    S_LABEL   = sty("label", fontName="Helvetica-Bold", fontSize=7.5,
-                    textColor=INK3, spaceBefore=0, spaceAfter=4,
-                    wordWrap="CJK")
-    S_NORMAL  = sty("normal", fontSize=9, textColor=INK2, leading=13)
-    S_BOLD    = sty("bold", fontName="Helvetica-Bold", fontSize=9, textColor=INK)
-    S_RIGHT   = sty("right", fontSize=9, textColor=INK, alignment=TA_RIGHT)
-    S_BOLD_R  = sty("bold_r", fontName="Helvetica-Bold", fontSize=9, textColor=INK, alignment=TA_RIGHT)
-    S_GREEN   = sty("green", fontName="Helvetica-Bold", fontSize=9, textColor=GREEN, alignment=TA_RIGHT)
-    S_RED_    = sty("red", fontName="Helvetica-Bold", fontSize=9, textColor=RED, alignment=TA_RIGHT)
-    S_SMALL   = sty("small", fontSize=7.5, textColor=INK3)
-    S_FOOTER  = sty("footer", fontSize=7.5, textColor=INK3, alignment=TA_CENTER)
-
     COL = PAGE_W - 2*MARGIN
+
+    ACCENT  = colors.HexColor("#7c6dff")
+    GREEN   = colors.HexColor("#34d399")
+    RED     = colors.HexColor("#f87171")
+    INK     = colors.HexColor("#1a1a2e")
+    INK2    = colors.HexColor("#44444a")
+    INK3    = colors.HexColor("#8a8a94")
+    SURF2   = colors.HexColor("#f7f7f8")
+    BORDER  = colors.HexColor("#e4e4e8")
+    WHITE   = colors.white
+
+    def sty(name, **kw):
+        d = dict(fontName="Helvetica", fontSize=9, textColor=INK2, leading=14)
+        d.update(kw); return ParagraphStyle(name, **d)
+
+    S_TITLE  = sty("t", fontName="Helvetica-Bold", fontSize=20, textColor=INK, leading=24)
+    S_H2     = sty("h2", fontName="Helvetica-Bold", fontSize=11, textColor=INK, spaceBefore=16, spaceAfter=8)
+    S_LABEL  = sty("lb", fontName="Helvetica-Bold", fontSize=7.5, textColor=INK3)
+    S_BOLD   = sty("b", fontName="Helvetica-Bold", fontSize=9, textColor=INK)
+    S_RIGHT  = sty("r", fontSize=9, textColor=INK2, alignment=TA_RIGHT)
+    S_BOLDR  = sty("br", fontName="Helvetica-Bold", fontSize=9, textColor=INK, alignment=TA_RIGHT)
+    S_GREEN  = sty("g", fontName="Helvetica-Bold", fontSize=9, textColor=GREEN, alignment=TA_RIGHT)
+    S_RED    = sty("rd", fontName="Helvetica-Bold", fontSize=9, textColor=RED, alignment=TA_RIGHT)
+    S_FOOT   = sty("ft", fontSize=7.5, textColor=INK3, alignment=TA_CENTER)
+    S_NORM   = sty("n")
+
     story = []
-
-    # ── Header band ────────────────────────────────────────────────────────────
     date_str = datetime.date.today().strftime("%d %B %Y")
-    header_data = [[
-        Paragraph(event_name, S_TITLE),
-        Paragraph(f"Settlement Report<br/><font color='#8a8a94' size='8'>{date_str}</font>", sty("hr_right", fontSize=10, textColor=INK2, alignment=TA_RIGHT, leading=16))
-    ]]
-    header_tbl = Table(header_data, colWidths=[COL*0.62, COL*0.38])
-    header_tbl.setStyle(TableStyle([
-        ("VALIGN", (0,0), (-1,-1), "BOTTOM"),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 10),
-        ("LINEBELOW", (0,0), (-1,-1), 0.5, BORDER),
-    ]))
-    story.append(header_tbl)
-    story.append(Spacer(1, 12))
 
-    # ── Summary stats ──────────────────────────────────────────────────────────
+    # Header
+    hd = Table([[Paragraph(event_name, S_TITLE),
+                 Paragraph(f"Settlement Report<br/><font color='#8a8a94' size='8'>{date_str}</font>",
+                           sty("hr", fontSize=10, textColor=INK2, alignment=TA_RIGHT, leading=16))]],
+               colWidths=[COL*0.62, COL*0.38])
+    hd.setStyle(TableStyle([
+        ("VALIGN",(0,0),(-1,-1),"BOTTOM"),
+        ("BOTTOMPADDING",(0,0),(-1,-1),10),
+        ("LINEBELOW",(0,0),(-1,-1),0.5,BORDER),
+    ]))
+    story.append(hd)
+    story.append(Spacer(1,12))
+
+    # Stats
     total = sum(e["amount"] for e in expenses)
-    avg = total / len(participants) if participants else 0
-    stat_data = [[
-        [Paragraph("TOTAL SPENT", S_LABEL), Paragraph(f"Rs. {total:,.2f}", sty("sv", fontName="Helvetica-Bold", fontSize=16, textColor=GREEN, leading=20))],
-        [Paragraph("PARTICIPANTS", S_LABEL), Paragraph(str(len(participants)), sty("sv2", fontName="Helvetica-Bold", fontSize=16, textColor=ACCENT, leading=20))],
-        [Paragraph("EXPENSES", S_LABEL), Paragraph(str(len(expenses)), sty("sv3", fontName="Helvetica-Bold", fontSize=16, textColor=INK, leading=20))],
-        [Paragraph("AVG PER PERSON", S_LABEL), Paragraph(f"Rs. {avg:,.2f}", sty("sv4", fontName="Helvetica-Bold", fontSize=16, textColor=INK, leading=20))],
-    ]]
-    stat_tbl = Table(stat_data, colWidths=[COL/4]*4)
-    stat_tbl.setStyle(TableStyle([
-        ("BACKGROUND", (0,0), (-1,-1), SURFACE2),
-        ("ROUNDEDCORNERS", [4]),
-        ("INNERGRID", (0,0), (-1,-1), 0.5, BORDER),
-        ("BOX", (0,0), (-1,-1), 0.5, BORDER),
-        ("TOPPADDING", (0,0), (-1,-1), 10),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 10),
-        ("LEFTPADDING", (0,0), (-1,-1), 12),
-        ("RIGHTPADDING", (0,0), (-1,-1), 8),
-        ("VALIGN", (0,0), (-1,-1), "TOP"),
+    avg   = total/len(participants) if participants else 0
+    st = Table([[
+        [Paragraph("TOTAL SPENT",S_LABEL), Paragraph(f"Rs. {total:,.2f}", sty("sv",fontName="Helvetica-Bold",fontSize=16,textColor=GREEN,leading=20))],
+        [Paragraph("PARTICIPANTS",S_LABEL), Paragraph(str(len(participants)), sty("sv2",fontName="Helvetica-Bold",fontSize=16,textColor=ACCENT,leading=20))],
+        [Paragraph("EXPENSES",S_LABEL), Paragraph(str(len(expenses)), sty("sv3",fontName="Helvetica-Bold",fontSize=16,textColor=INK,leading=20))],
+        [Paragraph("AVG PER PERSON",S_LABEL), Paragraph(f"Rs. {avg:,.2f}", sty("sv4",fontName="Helvetica-Bold",fontSize=16,textColor=INK,leading=20))],
+    ]], colWidths=[COL/4]*4)
+    st.setStyle(TableStyle([
+        ("BACKGROUND",(0,0),(-1,-1),SURF2),("BOX",(0,0),(-1,-1),0.5,BORDER),
+        ("INNERGRID",(0,0),(-1,-1),0.5,BORDER),
+        ("TOPPADDING",(0,0),(-1,-1),10),("BOTTOMPADDING",(0,0),(-1,-1),10),
+        ("LEFTPADDING",(0,0),(-1,-1),12),("VALIGN",(0,0),(-1,-1),"TOP"),
     ]))
-    story.append(stat_tbl)
-    story.append(Spacer(1, 18))
+    story.append(st); story.append(Spacer(1,18))
 
-    # ── Who pays whom ──────────────────────────────────────────────────────────
+    # Transfers
     story.append(Paragraph("Final Settlement", S_H2))
     if not transactions:
-        settled_tbl = Table([[Paragraph("Everyone is fully settled — no transfers needed.", sty("ok", fontSize=9, textColor=GREEN))]],
-            colWidths=[COL])
-        settled_tbl.setStyle(TableStyle([
-            ("BACKGROUND",(0,0),(-1,-1), colors.HexColor("#ecfdf3")),
+        ok = Table([[Paragraph("Everyone is fully settled — no transfers needed.",
+                               sty("ok",fontSize=9,textColor=GREEN))]],colWidths=[COL])
+        ok.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,-1),colors.HexColor("#ecfdf3")),
             ("BOX",(0,0),(-1,-1),0.5,colors.HexColor("#a7f3d0")),
-            ("TOPPADDING",(0,0),(-1,-1),10), ("BOTTOMPADDING",(0,0),(-1,-1),10),
-            ("LEFTPADDING",(0,0),(-1,-1),14),
-        ]))
-        story.append(settled_tbl)
+            ("TOPPADDING",(0,0),(-1,-1),10),("BOTTOMPADDING",(0,0),(-1,-1),10),
+            ("LEFTPADDING",(0,0),(-1,-1),14)]))
+        story.append(ok)
     else:
-        t_header = [[ Paragraph("FROM", S_LABEL), Paragraph("", S_LABEL),
-                      Paragraph("TO", S_LABEL), Paragraph("AMOUNT", sty("lbl_r", fontSize=7.5, textColor=INK3, alignment=TA_RIGHT)) ]]
-        t_rows = []
-        for t in transactions:
-            t_rows.append([
-                Paragraph(t["from"], S_BOLD),
-                Paragraph("→", sty("arr", fontSize=10, textColor=INK3, alignment=TA_CENTER)),
-                Paragraph(t["to"], S_BOLD),
-                Paragraph(f"Rs. {t['amount']:,.2f}", S_RED_),
-            ])
-        t_data = t_header + t_rows
-        cws = [COL*0.32, COL*0.08, COL*0.32, COL*0.28]
-        t_tbl = Table(t_data, colWidths=cws)
-        ts = TableStyle([
-            ("BACKGROUND",(0,0),(-1,0), SURFACE2),
-            ("LINEBELOW",(0,0),(-1,0),0.5,BORDER),
-            ("BOX",(0,0),(-1,-1),0.5,BORDER),
-            ("INNERGRID",(0,1),(-1,-1),0.3,BORDER),
-            ("TOPPADDING",(0,0),(-1,-1),8), ("BOTTOMPADDING",(0,0),(-1,-1),8),
-            ("LEFTPADDING",(0,0),(-1,-1),12), ("RIGHTPADDING",(0,0),(-1,-1),12),
-            ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
+        th = [[Paragraph("FROM",S_LABEL),Paragraph("",S_LABEL),
+               Paragraph("TO",S_LABEL),Paragraph("AMOUNT",sty("lbr",fontSize=7.5,textColor=INK3,alignment=TA_RIGHT))]]
+        tr = [[Paragraph(t["from"],S_BOLD),
+               Paragraph("→",sty("ar",fontSize=10,textColor=INK3,alignment=TA_CENTER)),
+               Paragraph(t["to"],S_BOLD),
+               Paragraph(f"Rs. {t['amount']:,.2f}",S_RED)] for t in transactions]
+        tt = Table(th+tr, colWidths=[COL*.32,COL*.08,COL*.32,COL*.28])
+        ts2 = TableStyle([
+            ("BACKGROUND",(0,0),(-1,0),SURF2),("LINEBELOW",(0,0),(-1,0),0.5,BORDER),
+            ("BOX",(0,0),(-1,-1),0.5,BORDER),("INNERGRID",(0,1),(-1,-1),0.3,BORDER),
+            ("TOPPADDING",(0,0),(-1,-1),8),("BOTTOMPADDING",(0,0),(-1,-1),8),
+            ("LEFTPADDING",(0,0),(-1,-1),12),("VALIGN",(0,0),(-1,-1),"MIDDLE"),
         ])
-        for i,_ in enumerate(t_rows,1):
-            if i%2==0: ts.add("BACKGROUND",(0,i),(-1,i),SURFACE2)
-        t_tbl.setStyle(ts)
-        story.append(t_tbl)
+        for i in range(1,len(tr)+1):
+            if i%2==0: ts2.add("BACKGROUND",(0,i),(-1,i),SURF2)
+        tt.setStyle(ts2); story.append(tt)
 
-    story.append(Spacer(1, 18))
+    story.append(Spacer(1,18))
 
-    # ── Expense log ────────────────────────────────────────────────────────────
+    # Expense log
     story.append(Paragraph("Expense Log", S_H2))
-    e_header = [[Paragraph("DESCRIPTION", S_LABEL), Paragraph("PAID BY", S_LABEL),
-                 Paragraph("SPLIT AMONG", S_LABEL), Paragraph("AMOUNT", sty("lbl_r2", fontSize=7.5, textColor=INK3, alignment=TA_RIGHT))]]
-    e_rows = []
-    for exp in expenses:
-        parts_str = ", ".join(exp["participants"])
-        share = exp["amount"] / len(exp["participants"])
-        e_rows.append([
-            Paragraph(exp["name"], S_BOLD),
-            Paragraph(exp["payer"], S_NORMAL),
-            Paragraph(f"{parts_str}<br/><font color='#8a8a94' size='7.5'>Rs.{share:.2f} each</font>",
-                      sty("p_cell", fontSize=8.5, textColor=INK2, leading=13)),
-            Paragraph(f"Rs. {exp['amount']:,.2f}", S_BOLD_R),
-        ])
-    e_data = e_header + e_rows
-    e_cws = [COL*0.28, COL*0.16, COL*0.36, COL*0.20]
-    e_tbl = Table(e_data, colWidths=e_cws)
-    es = TableStyle([
-        ("BACKGROUND",(0,0),(-1,0), SURFACE2),
-        ("LINEBELOW",(0,0),(-1,0),0.5,BORDER),
-        ("BOX",(0,0),(-1,-1),0.5,BORDER),
-        ("INNERGRID",(0,1),(-1,-1),0.3,BORDER),
-        ("TOPPADDING",(0,0),(-1,-1),8), ("BOTTOMPADDING",(0,0),(-1,-1),8),
-        ("LEFTPADDING",(0,0),(-1,-1),12), ("RIGHTPADDING",(0,0),(-1,-1),12),
-        ("VALIGN",(0,0),(-1,-1),"TOP"),
+    eh = [[Paragraph("DESCRIPTION",S_LABEL),Paragraph("PAID BY",S_LABEL),
+           Paragraph("SPLIT AMONG",S_LABEL),Paragraph("AMOUNT",sty("lbr2",fontSize=7.5,textColor=INK3,alignment=TA_RIGHT))]]
+    er = [[Paragraph(e["name"],S_BOLD), Paragraph(e["payer"],S_NORM),
+           Paragraph(", ".join(e["participants"])+"<br/><font color='#8a8a94' size='7.5'>Rs.{:.2f} each</font>".format(e["amount"]/len(e["participants"])),
+                     sty("pc",fontSize=8.5,textColor=INK2,leading=13)),
+           Paragraph(f"Rs. {e['amount']:,.2f}",S_BOLDR)] for e in expenses]
+    et = Table(eh+er, colWidths=[COL*.28,COL*.16,COL*.36,COL*.20])
+    ets = TableStyle([
+        ("BACKGROUND",(0,0),(-1,0),SURF2),("LINEBELOW",(0,0),(-1,0),0.5,BORDER),
+        ("BOX",(0,0),(-1,-1),0.5,BORDER),("INNERGRID",(0,1),(-1,-1),0.3,BORDER),
+        ("TOPPADDING",(0,0),(-1,-1),8),("BOTTOMPADDING",(0,0),(-1,-1),8),
+        ("LEFTPADDING",(0,0),(-1,-1),12),("VALIGN",(0,0),(-1,-1),"TOP"),
     ])
-    for i,_ in enumerate(e_rows,1):
-        if i%2==0: es.add("BACKGROUND",(0,i),(-1,i),SURFACE2)
-    e_tbl.setStyle(es)
-    story.append(e_tbl)
-    story.append(Spacer(1, 18))
+    for i in range(1,len(er)+1):
+        if i%2==0: ets.add("BACKGROUND",(0,i),(-1,i),SURF2)
+    et.setStyle(ets); story.append(et); story.append(Spacer(1,18))
 
-    # ── Per-person summary ─────────────────────────────────────────────────────
+    # Participant summary
     story.append(Paragraph("Participant Summary", S_H2))
-    p_header = [[Paragraph("PARTICIPANT", S_LABEL), Paragraph("PAID", sty("lh",fontSize=7.5,textColor=INK3,alignment=TA_RIGHT)),
-                 Paragraph("CONSUMED", sty("lh2",fontSize=7.5,textColor=INK3,alignment=TA_RIGHT)),
-                 Paragraph("BALANCE", sty("lh3",fontSize=7.5,textColor=INK3,alignment=TA_RIGHT))]]
-    p_rows = []
-    for r in results:
-        bal = r["balance"]
-        if bal > 0.01:   bal_p = Paragraph(f"+Rs. {bal:,.2f}", sty("bg",fontName="Helvetica-Bold",fontSize=9,textColor=GREEN,alignment=TA_RIGHT))
-        elif bal < -0.01: bal_p = Paragraph(f"−Rs. {abs(bal):,.2f}", sty("br",fontName="Helvetica-Bold",fontSize=9,textColor=RED,alignment=TA_RIGHT))
-        else:              bal_p = Paragraph("Settled", sty("bs",fontSize=9,textColor=INK3,alignment=TA_RIGHT))
-        p_rows.append([
-            Paragraph(r["person"], S_BOLD),
-            Paragraph(f"Rs. {r['paid']:,.2f}", S_RIGHT),
-            Paragraph(f"Rs. {r['consumed']:,.2f}", S_RIGHT),
-            bal_p,
-        ])
-    p_data = p_header + p_rows
-    p_cws = [COL*0.34, COL*0.22, COL*0.22, COL*0.22]
-    p_tbl = Table(p_data, colWidths=p_cws)
-    ps = TableStyle([
-        ("BACKGROUND",(0,0),(-1,0), SURFACE2),
-        ("LINEBELOW",(0,0),(-1,0),0.5,BORDER),
-        ("BOX",(0,0),(-1,-1),0.5,BORDER),
-        ("INNERGRID",(0,1),(-1,-1),0.3,BORDER),
-        ("TOPPADDING",(0,0),(-1,-1),9), ("BOTTOMPADDING",(0,0),(-1,-1),9),
-        ("LEFTPADDING",(0,0),(-1,-1),12), ("RIGHTPADDING",(0,0),(-1,-1),12),
-        ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
+    ph = [[Paragraph("PARTICIPANT",S_LABEL),Paragraph("PAID",sty("pr",fontSize=7.5,textColor=INK3,alignment=TA_RIGHT)),
+           Paragraph("CONSUMED",sty("pc2",fontSize=7.5,textColor=INK3,alignment=TA_RIGHT)),
+           Paragraph("BALANCE",sty("pb",fontSize=7.5,textColor=INK3,alignment=TA_RIGHT))]]
+    def bal_para(b):
+        if b>0.01:  return Paragraph(f"+Rs. {b:,.2f}",S_GREEN)
+        if b<-0.01: return Paragraph(f"−Rs. {abs(b):,.2f}",S_RED)
+        return Paragraph("Settled",sty("ps",fontSize=9,textColor=INK3,alignment=TA_RIGHT))
+    pr = [[Paragraph(r["person"],S_BOLD),Paragraph(f"Rs. {r['paid']:,.2f}",S_RIGHT),
+           Paragraph(f"Rs. {r['consumed']:,.2f}",S_RIGHT),bal_para(r["balance"])] for r in results]
+    pt = Table(ph+pr, colWidths=[COL*.34,COL*.22,COL*.22,COL*.22])
+    pts = TableStyle([
+        ("BACKGROUND",(0,0),(-1,0),SURF2),("LINEBELOW",(0,0),(-1,0),0.5,BORDER),
+        ("BOX",(0,0),(-1,-1),0.5,BORDER),("INNERGRID",(0,1),(-1,-1),0.3,BORDER),
+        ("TOPPADDING",(0,0),(-1,-1),9),("BOTTOMPADDING",(0,0),(-1,-1),9),
+        ("LEFTPADDING",(0,0),(-1,-1),12),("VALIGN",(0,0),(-1,-1),"MIDDLE"),
     ])
-    for i,_ in enumerate(p_rows,1):
-        if i%2==0: ps.add("BACKGROUND",(0,i),(-1,i),SURFACE2)
-    p_tbl.setStyle(ps)
-    story.append(p_tbl)
+    for i in range(1,len(pr)+1):
+        if i%2==0: pts.add("BACKGROUND",(0,i),(-1,i),SURF2)
+    pt.setStyle(pts); story.append(pt)
 
-    # ── Footer ─────────────────────────────────────────────────────────────────
-    story.append(Spacer(1, 24))
+    # Footer
+    story.append(Spacer(1,24))
     story.append(HRFlowable(width=COL, thickness=0.5, color=BORDER))
-    story.append(Spacer(1, 8))
-    story.append(Paragraph(f"Generated by SplitEasy  ·  {date_str}  ·  {len(participants)} participants  ·  {len(expenses)} expenses", S_FOOTER))
-
+    story.append(Spacer(1,8))
+    story.append(Paragraph(
+        f"Generated by SplitEasy  ·  Developed by Prashant Umrao  ·  {date_str}", S_FOOT))
     doc.build(story)
-    buf.seek(0)
-    return buf
+    buf.seek(0); return buf
 
-# ── Download PDF ──────────────────────────────────────────────────────────────
 @app.route("/download_pdf")
+@login_required
 def download_pdf():
     if "event_id" not in session: return redirect(url_for("home"))
-    conn = get_connection(); cursor = conn.cursor()
-    cursor.execute("SELECT * FROM expenses WHERE event_id=?", (session["event_id"],))
-    rows = cursor.fetchall(); conn.close()
+    conn = get_connection(); c = conn.cursor()
+    c.execute("SELECT * FROM expenses WHERE event_id=?", (session["event_id"],))
+    rows = c.fetchall(); conn.close()
     expenses = [{"name":r["name"],"amount":r["amount"],"payer":r["payer"],
                  "participants":r["participants"].split(",")} for r in rows]
     results, transactions = compute_settlement(expenses, session["participants"])
     buf = build_pdf(session["event_name"], session["participants"], expenses, results, transactions)
-    safe_name = session["event_name"].replace(" ","_")
+    safe = session["event_name"].replace(" ","_")
     return send_file(buf, as_attachment=True,
-        download_name=f"{safe_name}_settlement.pdf",
-        mimetype="application/pdf")
+        download_name=f"{safe}_settlement.pdf", mimetype="application/pdf")
 
-# ── PWA Static Routes ─────────────────────────────────────────────────────────
-# Service worker must be served from root scope, not /static/
-@app.route("/sw.js")
-def service_worker():
-    return send_from_directory(
-        os.path.join(app.root_path, "static"),
-        "sw.js",
-        mimetype="application/javascript"
-    )
-
-@app.route("/manifest.json")
-def manifest():
-    return send_from_directory(
-        os.path.join(app.root_path, "static"),
-        "manifest.json",
-        mimetype="application/manifest+json"
-    )
-
-@app.route("/offline")
-def offline():
-    return render_template("offline.html")
-
-# ── Run ───────────────────────────────────────────────────────────────────────
 init_db()
 if __name__ == "__main__":
     app.run(debug=True, port=5015)

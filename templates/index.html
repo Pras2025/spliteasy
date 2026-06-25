@@ -1,19 +1,23 @@
 {% extends "base.html" %}
+{% block title %}Events{% endblock %}
 {% block content %}
 
-<div class="page-header-row" style="margin-bottom:2rem">
-  <div class="page-header" style="margin-bottom:0">
-    <h1>Your Events</h1>
-    <p>Track shared expenses for trips, dinners, and more</p>
+<div style="margin-bottom:2rem">
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+    <h1 style="font-family:'Plus Jakarta Sans',sans-serif;font-size:1.6rem;font-weight:800">Your Events</h1>
   </div>
+  <p style="color:var(--ink-3);font-size:.9rem">Track and split expenses for any occasion</p>
 </div>
 
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;align-items:start">
 
-  <!-- Create Event -->
-  <div class="card" style="box-shadow:var(--shadow)">
+  <!-- Create Event Card -->
+  <div class="card">
     <div class="card-header">
-      <h3>Create New Event</h3>
+      <h3>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent-2)" stroke-width="2.5" stroke-linecap="round" style="margin-right:6px;vertical-align:-2px"><path d="M12 5v14M5 12h14"/></svg>
+        New Event
+      </h3>
     </div>
     <div class="card-body">
       <form method="POST">
@@ -40,25 +44,27 @@
     {% if events|length == 0 %}
     <div class="card">
       <div class="empty-state">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 0 2-2h2a2 2 0 0 0 2 2"/></svg>
-        <p>No events yet. Create one to get started.</p>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+        <p>No events yet.<br>Create one to get started.</p>
       </div>
     </div>
     {% else %}
-    <div style="display:flex;flex-direction:column;gap:10px">
+    <div style="display:flex;flex-direction:column;gap:8px">
       {% for event in events %}
-      <div class="card" style="padding:1rem 1.25rem;display:flex;align-items:center;justify-content:space-between;gap:.75rem">
+      <div class="card" style="padding:.9rem 1.1rem;display:flex;align-items:center;justify-content:space-between;gap:.75rem">
         <div style="display:flex;align-items:center;gap:10px;min-width:0">
-          <div style="width:36px;height:36px;border-radius:50%;background:var(--accent-light);color:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:.8125rem;flex-shrink:0">
+          <div class="avatar" style="width:38px;height:38px;font-size:.8125rem">
             {{ event["name"][:2]|upper }}
           </div>
-          <span style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ event["name"] }}</span>
+          <div style="min-width:0">
+            <div style="font-weight:600;font-size:.9375rem;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ event["name"] }}</div>
+            <div style="font-size:.75rem;color:var(--ink-3)">Event #{{ event["id"] }}</div>
+          </div>
         </div>
         <div style="display:flex;gap:6px;flex-shrink:0">
           <a href="/event/{{ event['id'] }}" class="btn btn-primary btn-sm">Open →</a>
-          <button class="btn btn-danger btn-sm"
-            onclick="confirmDelete({{ event['id'] }}, '{{ event['name'] }}')">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></polyline></svg>
+          <button class="btn btn-danger btn-sm btn-icon" onclick="confirmDelete({{ event['id'] }}, '{{ event['name'] }}')">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg>
           </button>
         </div>
       </div>
@@ -66,22 +72,21 @@
     </div>
     {% endif %}
   </div>
-
 </div>
 
-<!-- Delete confirmation modal -->
-<div id="delete-modal" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.45);align-items:center;justify-content:center;padding:1.5rem">
-  <div class="card" style="max-width:360px;width:100%;box-shadow:var(--shadow-lg)">
-    <div class="card-body" style="text-align:center;padding:1.75rem 1.5rem">
-      <div style="width:48px;height:48px;border-radius:50%;background:var(--red-bg);margin:0 auto 1rem;display:flex;align-items:center;justify-content:center">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+<!-- Delete modal -->
+<div id="delete-modal" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.7);backdrop-filter:blur(6px);align-items:center;justify-content:center;padding:1.5rem">
+  <div class="card" style="max-width:340px;width:100%;box-shadow:var(--shadow);animation:fadeUp .2s ease">
+    <div class="card-body" style="text-align:center;padding:2rem 1.5rem">
+      <div style="width:52px;height:52px;border-radius:14px;background:var(--red-bg);margin:0 auto 1.25rem;display:flex;align-items:center;justify-content:center;border:1px solid rgba(248,113,113,.2)">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg>
       </div>
-      <h3 style="font-size:1.1rem;margin-bottom:.5rem">Delete Event?</h3>
-      <p style="color:var(--ink-3);font-size:.9rem;margin-bottom:1.5rem">
+      <h3 style="font-size:1.05rem;margin-bottom:.5rem">Delete Event?</h3>
+      <p style="color:var(--ink-3);font-size:.875rem;margin-bottom:1.5rem;line-height:1.5">
         "<span id="modal-event-name" style="color:var(--ink);font-weight:500"></span>" and all its expenses will be permanently deleted.
       </p>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-ghost" style="flex:1" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-ghost" style="flex:1;justify-content:center" onclick="closeModal()">Cancel</button>
         <a id="modal-confirm-btn" href="#" class="btn btn-danger" style="flex:1;justify-content:center">Delete</a>
       </div>
     </div>
@@ -89,25 +94,16 @@
 </div>
 
 <script>
-function confirmDelete(id, name) {
-  document.getElementById('modal-event-name').textContent = name;
-  document.getElementById('modal-confirm-btn').href = '/delete_event/' + id;
-  const modal = document.getElementById('delete-modal');
-  modal.style.display = 'flex';
+function confirmDelete(id,name){
+  document.getElementById('modal-event-name').textContent=name;
+  document.getElementById('modal-confirm-btn').href='/delete_event/'+id;
+  document.getElementById('delete-modal').style.display='flex';
 }
-function closeModal() {
-  document.getElementById('delete-modal').style.display = 'none';
-}
-// Close on backdrop click
-document.getElementById('delete-modal').addEventListener('click', function(e) {
-  if (e.target === this) closeModal();
-});
+function closeModal(){document.getElementById('delete-modal').style.display='none'}
+document.getElementById('delete-modal').addEventListener('click',function(e){if(e.target===this)closeModal()});
 </script>
 
 <style>
-@media(max-width:640px){
-  div[style*="grid-template-columns:1fr 1fr"]{grid-template-columns:1fr!important}
-}
+@media(max-width:640px){div[style*="grid-template-columns:1fr 1fr"]{grid-template-columns:1fr!important}}
 </style>
-
 {% endblock %}

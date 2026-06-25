@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% block title %}Expenses{% endblock %}
 {% block content %}
 
 <div class="page-header-row">
@@ -8,7 +9,7 @@
   </div>
   <div class="page-header-actions">
     <a href="/dashboard" class="btn btn-ghost btn-sm">Dashboard</a>
-    <a href="/add_expense" class="btn btn-primary btn-sm">+ Add Expense</a>
+    <a href="/add_expense" class="btn btn-primary btn-sm">+ Add</a>
   </div>
 </div>
 
@@ -16,7 +17,7 @@
   {% if expenses|length == 0 %}
   <div class="empty-state">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 14l2 2 4-4M3 10h18M3 6h18M3 14h4M3 18h4"/></svg>
-    <p>No expenses added yet.</p>
+    <p>No expenses yet.</p>
     <a href="/add_expense" class="btn btn-primary">Add First Expense</a>
   </div>
   {% else %}
@@ -28,22 +29,20 @@
           <th>Description</th>
           <th>Amount</th>
           <th>Paid By</th>
-          <th>Participants</th>
+          <th>Split Among</th>
           <th></th>
         </tr>
       </thead>
       <tbody>
         {% for expense in expenses %}
         <tr>
-          <td style="color:var(--ink-3);width:40px">{{ loop.index }}</td>
-          <td style="font-weight:500">{{ expense.name }}</td>
+          <td>{{ loop.index }}</td>
+          <td style="font-weight:500;color:var(--ink)">{{ expense.name }}</td>
+          <td><span class="badge badge-green">₹{{ expense.amount }}</span></td>
           <td>
-            <span class="badge badge-green">₹{{ expense.amount }}</span>
-          </td>
-          <td>
-            <span style="display:inline-flex;align-items:center;gap:6px">
-              <span style="width:24px;height:24px;border-radius:50%;background:var(--accent-light);color:var(--accent);display:inline-flex;align-items:center;justify-content:center;font-size:.6875rem;font-weight:600">{{ expense.payer[:1]|upper }}</span>
-              {{ expense.payer }}
+            <span style="display:inline-flex;align-items:center;gap:7px">
+              <span class="avatar" style="width:26px;height:26px;font-size:.65rem">{{ expense.payer[:1]|upper }}</span>
+              <span style="color:var(--ink)">{{ expense.payer }}</span>
             </span>
           </td>
           <td>
@@ -53,10 +52,12 @@
               {% endfor %}
             </div>
           </td>
-          <td style="width:80px">
+          <td>
             <a href="/delete/{{ expense.id }}"
                onclick="return confirm('Delete this expense?')"
-               class="btn btn-danger btn-sm">Delete</a>
+               class="btn btn-danger btn-sm btn-icon">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg>
+            </a>
           </td>
         </tr>
         {% endfor %}

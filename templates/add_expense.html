@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% block title %}Add Expense{% endblock %}
 {% block content %}
 
 <div class="page-header-row" style="margin-bottom:1.5rem">
@@ -9,16 +10,14 @@
   <a href="/dashboard" class="btn btn-ghost btn-sm">← Back</a>
 </div>
 
-<div style="max-width:560px">
-<div class="card" style="box-shadow:var(--shadow)">
+<div style="max-width:540px">
+<div class="card">
   <div class="card-body">
     <form method="POST">
-
       <div class="form-group">
-        <label class="form-label">What was it for?</label>
-        <input type="text" name="expense_name" class="form-control" placeholder="Raaj Kachori, Hotel, Petrol, Tickets…" required>
+        <label class="form-label">What was paid for?</label>
+        <input type="text" name="expense_name" class="form-control" placeholder="Raaj Kachori, Hotel, Petrol…" required autofocus>
       </div>
-
       <div class="form-group">
         <label class="form-label">Amount</label>
         <div class="input-prefix">
@@ -26,7 +25,6 @@
           <input type="number" step="0.01" min="0" name="amount" class="form-control" placeholder="0.00" required>
         </div>
       </div>
-
       <div class="form-group">
         <label class="form-label">Paid by</label>
         <select name="payer" class="form-control" required>
@@ -35,61 +33,48 @@
           {% endfor %}
         </select>
       </div>
-
       <div class="form-group" style="margin-bottom:0">
         <label class="form-label">Split among</label>
         <div style="display:flex;gap:8px;margin-bottom:10px">
-          <button type="button" class="btn btn-sm btn-secondary" onclick="selectAll()">Select All</button>
-          <button type="button" class="btn btn-sm btn-ghost" onclick="clearAll()">Clear All</button>
+          <button type="button" class="btn btn-ghost btn-sm" onclick="selectAll()">Select All</button>
+          <button type="button" class="btn btn-ghost btn-sm" onclick="clearAll()">Clear All</button>
         </div>
         <div class="checkbox-grid">
           {% for person in participants %}
-          <label class="checkbox-chip" id="chip-{{ loop.index }}">
+          <label class="checkbox-chip checked" id="chip-{{ loop.index }}">
             <input type="checkbox" name="participants" value="{{ person }}" checked
-              onchange="syncChip(this, 'chip-{{ loop.index }}')">
+              onchange="syncChip(this,'chip-{{ loop.index }}')">
             {{ person }}
           </label>
           {% endfor %}
         </div>
       </div>
-
       <hr class="divider">
-
       <div style="display:flex;gap:10px">
-        <button class="btn btn-primary" style="flex:1">
+        <button class="btn btn-primary btn-lg" style="flex:1">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg>
           Save Expense
         </button>
-        <a href="/dashboard" class="btn btn-ghost">Cancel</a>
+        <a href="/dashboard" class="btn btn-ghost btn-lg">Cancel</a>
       </div>
-
     </form>
   </div>
 </div>
 </div>
 
 <script>
-function syncChip(cb, chipId) {
-  const chip = document.getElementById(chipId);
-  if (cb.checked) chip.classList.add('checked');
-  else chip.classList.remove('checked');
+function syncChip(cb,id){
+  document.getElementById(id).classList.toggle('checked',cb.checked);
 }
-function selectAll() {
-  document.querySelectorAll('.checkbox-chip input[type=checkbox]').forEach((cb, i) => {
-    cb.checked = true;
-    cb.closest('.checkbox-chip').classList.add('checked');
+function selectAll(){
+  document.querySelectorAll('.checkbox-chip').forEach(c=>{
+    c.classList.add('checked');c.querySelector('input').checked=true;
   });
 }
-function clearAll() {
-  document.querySelectorAll('.checkbox-chip input[type=checkbox]').forEach(cb => {
-    cb.checked = false;
-    cb.closest('.checkbox-chip').classList.remove('checked');
+function clearAll(){
+  document.querySelectorAll('.checkbox-chip').forEach(c=>{
+    c.classList.remove('checked');c.querySelector('input').checked=false;
   });
 }
-// init
-document.querySelectorAll('.checkbox-chip input[type=checkbox]').forEach(cb => {
-  if (cb.checked) cb.closest('.checkbox-chip').classList.add('checked');
-});
 </script>
-
 {% endblock %}

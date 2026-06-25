@@ -3,56 +3,53 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="theme-color" content="#5b4cff">
+<meta name="theme-color" content="#0d0d0f">
 <title>Offline – SplitEasy</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@700;800&display=swap" rel="stylesheet">
 <style>
-:root { --accent:#5b4cff; --ink:#0f0f10; --ink-3:#8a8a94; --surface-2:#f7f7f8; }
+:root{--accent:#7c6dff;--accent-2:#9d91ff;--bg:#0d0d0f;--bg-2:#131316;--ink:#f0f0f4;--ink-3:#60606e;--border:rgba(255,255,255,.08)}
 *{box-sizing:border-box;margin:0;padding:0}
-body {
-  font-family:'Inter',sans-serif;
-  background:var(--surface-2); color:var(--ink);
-  min-height:100vh; min-height:100dvh;
-  display:flex; align-items:center; justify-content:center;
-  padding:2rem; text-align:center;
+body{
+  font-family:'Inter',sans-serif;background:var(--bg);color:var(--ink);
+  min-height:100vh;min-height:100dvh;
+  display:flex;align-items:center;justify-content:center;
+  padding:2rem;text-align:center;
+  background-image:radial-gradient(ellipse 80% 50% at 50% -10%,rgba(124,109,255,.12),transparent);
 }
-.wrap { max-width:320px; }
-.icon {
-  width:80px; height:80px; border-radius:20px;
-  background:var(--accent); margin:0 auto 1.5rem;
-  display:flex; align-items:center; justify-content:center;
+.wrap{max-width:300px}
+.icon{
+  width:72px;height:72px;border-radius:20px;
+  background:rgba(124,109,255,.12);border:1px solid rgba(124,109,255,.2);
+  margin:0 auto 1.5rem;display:flex;align-items:center;justify-content:center;
 }
-.icon svg { width:40px; height:40px; stroke:white; }
-h1 {
-  font-family:'Plus Jakarta Sans',sans-serif;
-  font-size:1.5rem; font-weight:700; margin-bottom:.5rem;
+.icon svg{width:32px;height:32px;stroke:var(--accent-2)}
+h1{font-family:'Plus Jakarta Sans',sans-serif;font-size:1.4rem;font-weight:700;margin-bottom:.5rem}
+p{color:var(--ink-3);font-size:.9rem;line-height:1.6;margin-bottom:1.75rem}
+.btn{
+  display:inline-flex;align-items:center;gap:8px;
+  background:linear-gradient(135deg,var(--accent),var(--accent-2));
+  color:#fff;padding:12px 28px;border-radius:9px;
+  font-size:.9375rem;font-weight:600;font-family:inherit;
+  text-decoration:none;cursor:pointer;border:none;
 }
-p { color:var(--ink-3); font-size:.9375rem; line-height:1.6; margin-bottom:1.5rem; }
-.btn {
-  display:inline-flex; align-items:center; gap:8px;
-  background:var(--accent); color:#fff;
-  padding:11px 24px; border-radius:8px;
-  font-size:.9375rem; font-weight:500;
-  text-decoration:none; cursor:pointer; border:none;
-  font-family:inherit;
-}
-.btn:active { opacity:.85; transform:scale(.98); }
+.credit{margin-top:2rem;font-size:.7rem;color:var(--ink-3)}
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="icon">
-    <svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
-      <path d="M1 1l22 22M16.72 11.06A10.94 10.94 0 0 1 19 12.55M5 19a10.94 10.94 0 0 1-1.72-5.45M10.5 6.61a10 10 0 0 1 9.12 4.77M8.53 16.11a6 6 0 0 0 7.07-2.34M12 20h.01"/>
+    <svg fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+      <line x1="1" y1="1" x2="23" y2="23"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55M5 19a10.94 10.94 0 0 1-1.72-5.45M10.5 6.61a10 10 0 0 1 9.12 4.77M8.53 16.11a6 6 0 0 0 7.07-2.34M12 20h.01"/>
     </svg>
   </div>
   <h1>You're offline</h1>
-  <p>SplitEasy needs an internet connection to sync your expenses. Check your connection and try again.</p>
+  <p>SplitEasy needs a connection to sync your expenses. Check your internet and try again.</p>
   <button class="btn" onclick="window.location.reload()">
-    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-    Try again
+    <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+    Try Again
   </button>
+  <div class="credit">developed by Prashant Umrao</div>
 </div>
 </body>
 </html>
