@@ -23,10 +23,14 @@ app.secret_key = os.environ.get("SECRET_KEY", "spliteasy-dev-secret-change-in-pr
 
 # Session cookie must work over HTTPS on Render
 app.config.update(
-    SESSION_COOKIE_SECURE   = os.environ.get("RENDER", False),
+    SESSION_COOKIE_SECURE   = bool(os.environ.get("RENDER", False)),
     SESSION_COOKIE_HTTPONLY = True,
     SESSION_COOKIE_SAMESITE = "Lax",
     SESSION_COOKIE_NAME     = "spliteasy_session",
+    REMEMBER_COOKIE_NAME    = "spliteasy_remember",
+    REMEMBER_COOKIE_SECURE  = bool(os.environ.get("RENDER", False)),
+    REMEMBER_COOKIE_HTTPONLY= True,
+    REMEMBER_COOKIE_DURATION= 0,   # session cookie only
 )
 
 # Trust Render's HTTPS proxy
@@ -236,17 +240,17 @@ def google_callback():
 
     uid  = get_or_create_user(google_id, name, email, avatar)
     user = User(uid, name, email, avatar)
-    login_user(user, remember=True)
+    login_user(user, remember=False)
     return redirect(url_for("home"))
 
-@app.route("/logout")
+@app.route("/logout", methods=["GET","POST"])
 def logout():
     logout_user()
     session.clear()
-    # Expire the session cookie immediately
     response = redirect(url_for("login_page"))
-    response.delete_cookie("spliteasy_session")
-    response.delete_cookie("session")
+    # Delete every cookie that could keep the user logged in
+    for cookie_name in ["spliteasy_session", "session", "remember_token", "spliteasy_remember"]:
+        response.delete_cookie(cookie_name, path="/")
     return response
 
 # ── Home ──────────────────────────────────────────────────────────────────────
