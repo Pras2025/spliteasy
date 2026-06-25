@@ -47,14 +47,20 @@
     {% else %}
     <div style="display:flex;flex-direction:column;gap:10px">
       {% for event in events %}
-      <div class="card" style="padding:1rem 1.25rem;display:flex;align-items:center;justify-content:space-between;gap:1rem">
-        <div style="display:flex;align-items:center;gap:10px">
+      <div class="card" style="padding:1rem 1.25rem;display:flex;align-items:center;justify-content:space-between;gap:.75rem">
+        <div style="display:flex;align-items:center;gap:10px;min-width:0">
           <div style="width:36px;height:36px;border-radius:50%;background:var(--accent-light);color:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:.8125rem;flex-shrink:0">
             {{ event["name"][:2]|upper }}
           </div>
-          <span style="font-weight:500">{{ event["name"] }}</span>
+          <span style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ event["name"] }}</span>
         </div>
-        <a href="/event/{{ event['id'] }}" class="btn btn-primary btn-sm">Open →</a>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          <a href="/event/{{ event['id'] }}" class="btn btn-primary btn-sm">Open →</a>
+          <button class="btn btn-danger btn-sm"
+            onclick="confirmDelete({{ event['id'] }}, '{{ event['name'] }}')">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></polyline></svg>
+          </button>
+        </div>
       </div>
       {% endfor %}
     </div>
@@ -62,6 +68,41 @@
   </div>
 
 </div>
+
+<!-- Delete confirmation modal -->
+<div id="delete-modal" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.45);align-items:center;justify-content:center;padding:1.5rem">
+  <div class="card" style="max-width:360px;width:100%;box-shadow:var(--shadow-lg)">
+    <div class="card-body" style="text-align:center;padding:1.75rem 1.5rem">
+      <div style="width:48px;height:48px;border-radius:50%;background:var(--red-bg);margin:0 auto 1rem;display:flex;align-items:center;justify-content:center">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+      </div>
+      <h3 style="font-size:1.1rem;margin-bottom:.5rem">Delete Event?</h3>
+      <p style="color:var(--ink-3);font-size:.9rem;margin-bottom:1.5rem">
+        "<span id="modal-event-name" style="color:var(--ink);font-weight:500"></span>" and all its expenses will be permanently deleted.
+      </p>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost" style="flex:1" onclick="closeModal()">Cancel</button>
+        <a id="modal-confirm-btn" href="#" class="btn btn-danger" style="flex:1;justify-content:center">Delete</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function confirmDelete(id, name) {
+  document.getElementById('modal-event-name').textContent = name;
+  document.getElementById('modal-confirm-btn').href = '/delete_event/' + id;
+  const modal = document.getElementById('delete-modal');
+  modal.style.display = 'flex';
+}
+function closeModal() {
+  document.getElementById('delete-modal').style.display = 'none';
+}
+// Close on backdrop click
+document.getElementById('delete-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+</script>
 
 <style>
 @media(max-width:640px){

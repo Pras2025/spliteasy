@@ -5,6 +5,10 @@ import io
 import datetime
 import os
 
+# Absolute path so DB works on any host (Render, local, etc.)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH  = os.path.join(BASE_DIR, "expense.db")
+
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.lib import colors
@@ -29,7 +33,7 @@ WHITE    = colors.white
 
 # ── DB ────────────────────────────────────────────────────────────────────────
 def get_connection():
-    conn = sqlite3.connect("expense.db")
+    conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -117,6 +121,17 @@ def delete_expense(expense_id):
     cursor.execute("DELETE FROM expenses WHERE id=? AND event_id=?", (expense_id, session["event_id"]))
     conn.commit(); conn.close()
     return redirect(url_for("show_expenses"))
+
+# ── Delete Event ─────────────────────────────────────────────────────────────
+@app.route("/delete_event/<int:event_id>")
+def delete_event(event_id):
+    conn = get_connection(); cursor = conn.cursor()
+    cursor.execute("DELETE FROM expenses WHERE event_id=?", (event_id,))
+    cursor.execute("DELETE FROM events WHERE id=?", (event_id,))
+    conn.commit(); conn.close()
+    if session.get("event_id") == event_id:
+        session.clear()
+    return redirect(url_for("home"))
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def compute_settlement(expenses, participants):
@@ -392,4 +407,4 @@ def offline():
 # ── Run ───────────────────────────────────────────────────────────────────────
 init_db()
 if __name__ == "__main__":
-    app.run(debug=True, port=5018)
+    app.run(debug=True, port=5015)
