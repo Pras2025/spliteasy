@@ -118,7 +118,7 @@ nav.topnav{
 }
 .bnav-item svg{width:20px;height:20px}
 .bnav-item.active{color:var(--accent-2)}
-.bnav-add-wrap{flex:1;display:flex;align-items:center;justify-content:center}
+.bnav-add-center{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}
 .bnav-add-btn{
   width:46px;height:46px;border-radius:14px;
   background:linear-gradient(135deg,var(--accent),var(--accent-2));
@@ -364,7 +364,9 @@ tbody tr:hover td{background:var(--bg-3)}
   .page-header-actions{justify-content:flex-end}
   .page{padding:1.25rem 1rem;padding-bottom:calc(1.25rem + 74px + var(--sab))}
   .checkbox-grid{grid-template-columns:repeat(2,1fr)}
-  nav.topnav .nav-links{display:none}
+  /* hide nav links but keep user avatar button visible */
+  nav.topnav .nav-links .nav-hide-mobile{display:none}
+  nav.topnav .nav-links a:not(.nav-hide-mobile){display:none}
   .bottom-nav{display:block}
 }
 @media(min-width:641px){
@@ -433,7 +435,7 @@ tbody tr:hover td{background:var(--bg-3)}
       <a href="/expenses" class="{% if request.path=='/expenses' %}active{% endif %}">Expenses</a>
       <a href="/settlement" class="{% if request.path=='/settlement' %}active{% endif %}">Settlement</a>
       {% endif %}
-      <a href="/" class="{% if request.path=='/' %}active{% endif %}">Events</a>
+      <a href="/" class="{% if request.path=='/' %}active{% endif %} nav-hide-mobile">Events</a>
       {% if current_user.is_authenticated %}
       <div class="user-menu" id="userMenu">
         <button class="user-btn" onclick="toggleUserMenu()" aria-label="Account menu">
@@ -473,10 +475,11 @@ tbody tr:hover td{background:var(--bg-3)}
       <svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 0 2-2h2a2 2 0 0 0 2 2"/></svg>
       Expenses
     </a>
-    <a href="/add_expense" class="bnav-add-wrap">
+    <a href="/add_expense" class="bnav-item bnav-add-center">
       <div class="bnav-add-btn">
         <svg fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
       </div>
+      <span style="font-size:.625rem;font-weight:600;letter-spacing:.02em;text-transform:uppercase;color:var(--ink-3)">Add</span>
     </a>
     <a href="/settlement" class="bnav-item {% if request.path=='/settlement' %}active{% endif %}">
       <svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m6 2a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/></svg>
@@ -486,16 +489,6 @@ tbody tr:hover td{background:var(--bg-3)}
       <svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
       Events
     </a>
-    {% if current_user.is_authenticated %}
-    <button class="bnav-item" onclick="openProfileSheet()" style="background:none;border:none;cursor:pointer;-webkit-tap-highlight-color:transparent">
-      {% if current_user.avatar %}
-      <img src="{{ current_user.avatar }}" style="width:24px;height:24px;border-radius:50%;object-fit:cover;border:1.5px solid var(--border-2)" referrerpolicy="no-referrer">
-      {% else %}
-      <span style="width:24px;height:24px;border-radius:50%;background:var(--accent-bg);color:var(--accent-2);display:flex;align-items:center;justify-content:center;font-size:.65rem;font-weight:700;border:1.5px solid rgba(124,109,255,.3)">{{ current_user.name[:1]|upper }}</span>
-      {% endif %}
-      <span style="font-size:.625rem;font-weight:600;letter-spacing:.02em;text-transform:uppercase;color:var(--ink-3);margin-top:1px">Me</span>
-    </button>
-    {% endif %}
   </div>
 </nav>
 
